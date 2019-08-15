@@ -51,5 +51,23 @@
                 "summary": "Persist Declaration"
             }
         }
-    }
+    },
+    "components": {
+        "securitySchemes": {
+            "OAuth": {
+                "flows": {
+                    "authorizationCode": {
+
+                    }
+                },
+                "type": "oauth2"
+            }
+        }
+    },
+    "security": [
+        {
+            "OAuth": [
+            ]
+        }
+    ]
 }
