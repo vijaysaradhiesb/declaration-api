@@ -1,0 +1,114 @@
+
+import org.apache.camel.EndpointInject;
+import org.apache.camel.Exchange;
+import org.apache.camel.ExchangePattern;
+import org.apache.camel.ProducerTemplate;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.component.mock.MockEndpoint;
+import org.apache.camel.model.ModelCamelContext;
+import org.apache.camel.test.junit4.TestSupport;
+import org.apache.camel.test.spring.DisableJmx;
+import org.apache.camel.test.spring.ShutdownTimeout;
+import org.apache.commons.io.FileUtils;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+
+@DisableJmx
+@RunWith(SpringJUnit4ClassRunner.class)
+@ContextConfiguration(locations = {
+        "classpath:/test-connectivity/broker1.xml",
+        "classpath:/test-connectivity/connection-jms1.xml",
+        "classpath:/test-connectivity/connection-h2-xads1.xml",
+        "classpath:/test-context.xml",
+        "classpath:META-INF/spring/jms.xml",
+        "classpath:META-INF/spring/tx.xml",
+        "classpath:META-INF/spring/camel-context.xml",
+})
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@ShutdownTimeout(300)
+public class MigrationTest extends TestSupport {
+
+    @Autowired
+    private ModelCamelContext context;
+
+    @Autowired
+    private NamedParameterJdbcOperations jdbcTemplate;
+
+    @EndpointInject(uri = "direct:start")
+    private ProducerTemplate start;
+
+    @EndpointInject(uri = "mock:dlq")
+    private MockEndpoint dlq;
+    @EndpointInject(uri = "mock:result")
+    private MockEndpoint mock;
+
+    @Before
+    public void createRoutes() throws Exception {
+        jdbcTemplate.update(loadFile("/sql/migration_init.sql"), new HashMap<>());
+
+        context.addRoutes(new RouteBuilder() {
+            public void configure() throws Exception {
+                from("direct:start")
+                        .transacted("PROPAGATION_REQUIRES_NEW")
+                        .convertBodyTo(String.class)
+                        .to("jmstx:queue:hauk.migration.init");
+
+                from("jmstx:queue:challenger.migration.import.queue?destination.consumer.exclusive=true").setExchangePattern(ExchangePattern.InOnly).convertBodyTo(String.class).to("mock:result");
+
+                from("jmstx:DLQ.>")
+                        .transacted("PROPAGATION_MANDATORY")
+                        .to("mock:dlq");
+            }
+        });
+    }
+
+    @Test
+    public void testFirstInsertion() throws InterruptedException, IOException, URISyntaxException {
+        jdbcTemplate.update(loadFile("/sql/migration_test1.sql"), new HashMap<>());
+
+        String expected1 = loadFile("/results/result1.xml");
+        String expected2 = loadFile("/results/result2.xml");
+        String expected3 = loadFile("/results/result3.xml");
+        mock.expectedMessageCount(3);
+        dlq.expectedMessageCount(0);
+
+        start.sendBody("start");
+
+        mock.assertIsSatisfied();
+
+        List<Map<String, Object>> unprocessedRows = jdbcTemplate.queryForList("SELECT * FROM mv_underwritingmigration WHERE RowProcessed=0", new HashMap<>());
+        assertEquals(0, unprocessedRows.size());
+
+        List<Exchange> sorted = mock.getExchanges().stream().sorted((a, b) -> a.getIn().getBody(String.class).compareTo(b.getIn().getBody(String.class))).collect(Collectors.toList());
+        String result1 = sorted.get(0).getIn().getBody(String.class);
+        assertEquals(expected1, result1);
+        String result2 = sorted.get(1).getIn().getBody(String.class);
+        assertEquals(expected2, result2);
+        String result3 = sorted.get(2).getIn().getBody(String.class);
+        assertEquals(expected3, result3);
+    }
+
+    protected String loadFile(String fileName) throws IOException, URISyntaxException {
+        URI uri = this.getClass().getResource(fileName).toURI();
+        return FileUtils.readFileToString(new File(uri));
+    }
+}
