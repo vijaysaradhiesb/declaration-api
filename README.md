@@ -31,7 +31,7 @@ H2 library:
         </dependency>
 	
 	
-	
+
 	
 	<osgi:service id="dataSourceService" ref="internalXADataSource" interface="javax.sql.XADataSource">
         <service-properties>
