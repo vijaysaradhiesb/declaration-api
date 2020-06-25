@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns="http://www.springframework.org/schema/beans"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:tx="http://www.springframework.org/schema/tx" xmlns:jee="http://www.springframework.org/schema/jee"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+            http://www.springframework.org/schema/beans/spring-beans.xsd
+            http://camel.apache.org/schema/spring
+            http://camel.apache.org/schema/spring/camel-spring.xsd
+            http://www.springframework.org/schema/context
+            http://www.springframework.org/schema/context/spring-context.xsd
+            http://www.springframework.org/schema/tx
+            http://www.springframework.org/schema/tx/spring-tx.xsd">
+
+    <context:annotation-config/>
+    <tx:annotation-driven transaction-manager="transactionManager"/>
+    <context:component-scan base-package="com.xxx.integration.xxxx.migration"/>
+
+    <bean id="jdbcTemplate" class="org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate">
+        <constructor-arg ref="defaultDataSource"/>
+    </bean>
+
+    <camelContext id="xxx-migration-camel-context" useMDCLogging="true" trace="${camel.trace.enable:false}" depends-on="jmstx,defaultDataSource" xmlns="http://camel.apache.org/schema/spring">
+        <propertyPlaceholder id="properties" location="ref:props"/>
+
+        <route id="haukMigrationInitiationRoute">
+            <from uri="jmstx:queue:xxx.migration.init"/>
+            <setExchangePattern pattern="InOnly"/>
+            <transacted ref="PROPAGATION_MANDATORY"/>
+
+            <to uri="sql:SELECT DISTINCT PolicyReference FROM mv_underwritingmigration WHERE RowProcessed=0 ?dataSourceRef=defaultDataSource&amp;transacted=true&amp;useIterator=false"/>
+
+            <split>
+                <simple>${body}</simple>
+                <log message="INIT: ${body}"/>
+                <setBody>
+                    <simple>${body.get('POLICYREFERENCE')}</simple>
+                </setBody>
+                <to uri="jmstx:queue:xxx.migration"/>
+            </split>
+            <to uri="sql:UPDATE mv_underwritingmigration SET RowProcessed=1 ?dataSourceRef=defaultDataSource"/>
+        </route>
+
+        <route id="haukMigrationRoute">
+            <from uri="jmstx:queue:xxx.migration"/>
+            <setExchangePattern pattern="InOnly"/>
+            <transacted ref="PROPAGATION_MANDATORY"/>
+
+            <log message="Processing Migration message: ${body}"/>
+
+            <setHeader headerName="PolicyReference">
+                <simple>${body}</simple>
+            </setHeader>
+            <to uri="sql:SELECT * FROM mv_underwritingmigration WHERE PolicyReference=:#PolicyReference ORDER BY Term DESC ?dataSourceRef=defaultDataSource&amp;outputClass=com.xxx.integration.xxx.migration.UnderwritingMigrationRow"/>
+            <bean ref="underwritingTransformer"/>
+            <convertBodyTo type="java.lang.String"/>
+            <to uri="jmstx:queue:xxx.migration.import.queue"/>
+        </route>
+    </camelContext>
+
+</beans>
