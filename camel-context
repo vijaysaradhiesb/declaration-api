@@ -23,7 +23,7 @@
     <camelContext id="xxx-migration-camel-context" useMDCLogging="true" trace="${camel.trace.enable:false}" depends-on="jmstx,defaultDataSource" xmlns="http://camel.apache.org/schema/spring">
         <propertyPlaceholder id="properties" location="ref:props"/>
 
-        <route id="haukMigrationInitiationRoute">
+        <route id="xxxMigrationInitiationRoute">
             <from uri="jmstx:queue:xxx.migration.init"/>
             <setExchangePattern pattern="InOnly"/>
             <transacted ref="PROPAGATION_MANDATORY"/>
@@ -41,7 +41,7 @@
             <to uri="sql:UPDATE mv_underwritingmigration SET RowProcessed=1 ?dataSourceRef=defaultDataSource"/>
         </route>
 
-        <route id="haukMigrationRoute">
+        <route id="xxxMigrationRoute">
             <from uri="jmstx:queue:xxx.migration"/>
             <setExchangePattern pattern="InOnly"/>
             <transacted ref="PROPAGATION_MANDATORY"/>
