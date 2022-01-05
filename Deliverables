@@ -7,7 +7,7 @@ Create project structure, Asset Repository Structure for Journey and grant an ac
 Create a Platform file and release the platform and document the platform version to deliver Project
 Create an onboader file and laise with Devops to merge it. 
 Run the onboarder job to grant an access to project in rancher
-Create a new config for AEM project in appflow and liaise with devops to merge it
+Create a new config for project in appflow and liaise with devops to merge it
 Deploy the appflow job in NFR and sort out the issues with Devops
 Deploy the appflow job in SIT and sort out the issues with Devops
 
